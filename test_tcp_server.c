@@ -52,7 +52,7 @@ int main(int argc, char**argv)
    m_msg->count = 4;
    
    memcpy(m_msg->msg, msgs[index], SBD_MO_MAX - HEADER_LEN);
-   write(server_fd, (char*)m_msg, sizeof(iridium_msg) + SBD_MO_MAX - HEADER_LEN);
+   write(server_fd, m_msg, sizeof(iridium_msg) + SBD_MO_MAX - HEADER_LEN);
    close(server_fd);
 
    free(m_msg);

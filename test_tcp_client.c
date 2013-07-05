@@ -11,6 +11,7 @@
 
 typedef struct
 {
+	int sn;
 	long ip;
 	int index;
 	int count;
@@ -29,7 +30,7 @@ int recvfrom_iridium(int client_fd, char* msg_recv)
 	}
 
 	iridium_msg* m_msg = (iridium_msg*)msg_recv;
-	printf("ip = %ld, index = %d, count = %d ,msg = %s\n", m_msg->ip, m_msg->index, m_msg->count, m_msg->msg);
+	printf("sn = %d, ip = %ld, index = %d, count = %d ,msg = %s\n", m_msg->sn, m_msg->ip, m_msg->index, m_msg->count, m_msg->msg);
 
 	return nread;
 }
@@ -41,11 +42,6 @@ int main(int argc, char const *argv[])
 	int client_fd;
 	char msg_recv[512];
 
-	struct in_addr add1;
-	long l1 = 1688381632;
-	add1.s_addr = l1;
-	
-	printf("%u\n", inet_addr("192.168.137.159"));
 	server_fd = create_tcp_server(TCP_SERVER_IP, TCP_SERVER_PORT);
 	if (server_fd < 0) {
 		exit(EXIT_FAILURE);
@@ -54,6 +50,6 @@ int main(int argc, char const *argv[])
 	client_fd = accept_tcp_client(server_fd);
 	recvfrom_iridium(client_fd, msg_recv);
 
-
+	close(server_fd);
 	exit(EXIT_SUCCESS);
 }
