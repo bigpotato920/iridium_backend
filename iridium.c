@@ -6,59 +6,36 @@
 #include "iridium.h"
 #include "network.h"
 
-char* msg_send[MAX_IRIDIUM_NUM];
-int current_count[MAX_IRIDIUM_NUM] = {0};
-int total_count[MAX_IRIDIUM_NUM] = {0};
-unsigned long previous_ip[MAX_IRIDIUM_NUM] = {0};
-unsigned long current_ip[MAX_IRIDIUM_NUM] = {0};
 
-int init_msg_send()
-{
-	
-	int i;
-	for (i = 0; i < MAX_IRIDIUM_NUM; i++) {
-		msg_send[i] = (char*)calloc(sizeof(char), MAX_PACKET_SIZE);
-		if (msg_send[i] == NULL) {
-			free_msg_send();
-			return -1;
-		}
-	}
-	return 0;
-}
+mo_msg mo_msgs[MAX_IRIDIUM_NUM];
 
-
-void free_msg_send()
+int init()
 {
 	int i;
 	for (i = 0; i < MAX_IRIDIUM_NUM; i++) {
-		free(msg_send[i]);
+		mo_msgs[i].current_count = 0;
+		mo_msgs[i].payload_len = 0;
 	}
-
-}
-
-/**
- * Get the payload of the message send by iridium gss
- * @param  msg_recv buffer to store the payload
- * @return          0 on success, -1 on failure
- */
-int get_payload(char* msg_recv)
-{
 
 	return 0;
 }
+
 /**
  * Retrieve a single message from the iridium gss
  * @param  client_fd socket descriptor of the connected clinet
  * @param  msg_recv  buffer to store the payload of the message
  * @return           actual bytes read or -1 on error
  */
-int recvfrom_iridium(int client_fd, char* msg_recv)
+int get_slice(int client_fd, slice* slice)
 {
 	int nread = -1;
+	int buffer_len = SBD_MO_HEADER_LEN + SLICE_LEN;
+	char buffer[buffer_len];
+	memset(buffer, 0, buffer_len);
+	nread = read(client_fd, buffer, buffer_len);
+	memcpy(slice, buffer+SBD_MO_HEADER_LEN, SLICE_LEN);
 
-	nread = read(client_fd, msg_recv, MO_HEADER_LEN + SBD_MO_PAYLOAD);
-	msg_recv[nread] = '\0';
-	return nread;
+	return nread - SBD_MO_HEADER_LEN - SLICE_HEADER_LEN;
 }
 
 /**
@@ -69,56 +46,19 @@ int recvfrom_iridium(int client_fd, char* msg_recv)
  */
 int receive_iridium_msgs(int client_fd) 
 {
-	int current_sn = 0;
-	int nread = 0;
-	char msg_recv[MO_HEADER_LEN + SBD_MO_PAYLOAD];
-	iridium_mo_msg* m_msg = NULL;
-	int i;
+	int payload_len = 0;
+	int finish = 0;
+	slice *slice = malloc(SLICE_LEN);
 
-	printf("client_fd = %d\n", client_fd);
-	if (client_fd < 0)
-		return -1;
-	if ((nread = recvfrom_iridium(client_fd, msg_recv)) > 0) {
-		m_msg = (iridium_mo_msg*)msg_recv;
-		
-		current_sn = m_msg->sn;
-		printf("sn = %d\n", m_msg->sn);
-		current_ip[current_sn] = m_msg->ip;
-		total_count[current_sn] = m_msg->count;
 
-		if (previous_ip[current_sn] == 0 || previous_ip[current_sn] == current_ip[current_sn]) {
-			if (previous_ip[current_sn] == 0) {
-				previous_ip[current_sn] = current_ip[current_sn];
-				current_count[current_sn] = 0;
-			}
-			resemble_iridium_msgs(current_sn, m_msg->index, m_msg->msg);
-			current_count[current_sn] = current_count[current_sn] + 1;
+	payload_len = get_slice(client_fd, slice);
+	finish = resemble_iridium_msgs(slice, payload_len);
 
-			for (i = 0; i < MAX_IRIDIUM_NUM; i++) {
-				if ((total_count[i] > 0 ) && (current_count[i] == total_count[i])) {
-					previous_ip[i] = 0;
-					current_count[i] = 0;
-					total_count[i] = 0;
-					forward_iridium_msg(current_ip[i], msg_send[i]);
-				}
-			}
+	if (finish)
+		forward_iridium_msg(slice->header.sn);
 
-		} else {
-			perror("error occured");
-			close(client_fd);
-			return -1;
-		}	
-	} 
-	else if (nread == 0) {
-		printf("a clien disconnected\n");	
-		close(client_fd);
-	} else {
-		perror("error occured while reading from iridium");
-		close(client_fd);
-	}
-	
-
-	return nread;
+	free(slice);
+	return 0;
 }
 
 /**
@@ -127,14 +67,29 @@ int receive_iridium_msgs(int client_fd)
  * @param  msg   slice message
  * @return       [description]
  */
-void resemble_iridium_msgs(int sn, int index, char* msg)
+int resemble_iridium_msgs(slice *slice, int payload_len)
 {
-	printf("index = %d, msg = %s\n", index, msg);
+	printf("index = %d, payload_len = %d, msg = %s\n", slice->header.index, 
+		payload_len, slice->payload);
+	int sn = slice->header.sn;
+	int index = slice->header.index;
+	mo_msgs[sn].header = slice->header;
+	mo_msgs[sn].payload_len += payload_len;
+	mo_msgs[sn].current_count += 1;
+	memcpy(mo_msgs[sn].payload + index*(SLICE_PAYLOAD_LEN), slice->payload,
+		payload_len);
 
-	unsigned int msg_len = strlen(msg);
-	msg_len = msg_len <= SBD_MO_PAYLOAD - MO_HEADER_LEN ? msg_len: SBD_MO_PAYLOAD - MO_HEADER_LEN;
-	memcpy(msg_send[sn] + index*(SBD_MO_PAYLOAD - MO_HEADER_LEN), msg, msg_len);
+	//resemble complete
+	if (mo_msgs[sn].current_count == slice->header.count) {
+		mo_msgs[sn].current_count = 0;
+		mo_msgs[sn].payload[mo_msgs[sn].payload_len] = '\0';
+		printf("total payload len = %d\n", mo_msgs[sn].payload_len);
+		mo_msgs[sn].payload_len = 0;
 
+		return 1;
+	}
+
+	return 0;
 }
 
 
@@ -144,10 +99,11 @@ void resemble_iridium_msgs(int sn, int index, char* msg)
  * @param  forward_msg message to send
  * @return             0 on success or -1 on failure
  */
-int forward_iridium_msg (unsigned long ip, const char* forward_msg) 
+int forward_iridium_msg (int sn) 
 {
-	printf("ip = %lu, forward_msg = %s\n", ip, forward_msg);
-	return send_to_udp_server(ip, forward_msg);
+	long ip = mo_msgs[sn].header.ip;
+	printf("ip = %lu, len = %d, forward_msg = %s\n", ip, strlen(mo_msgs[sn].payload),mo_msgs[sn].payload);
+	return send_to_udp_server(ip, mo_msgs[sn].payload);
 }
 
 
@@ -174,7 +130,6 @@ int forward_server_command(int unix_server_fd, int tcp_client_fd)
 	rv = sendto_iridium(tcp_client_fd, m_command.imei, m_command.command);
 
 	close(unix_client_fd);
-	close(tcp_client_fd);
 
 	return rv;
 }
@@ -191,7 +146,7 @@ int sendto_iridium(int tcp_client_fd, const char* imei, const char* command)
 	  
 	iridium_mt_msg* msg = NULL;
 	int command_len = strlen(command);
-	int total_len = MT_HEADER_LEN + command_len;
+	int total_len = SBD_MT_HEADER_LEN + command_len;
 	int nwrite;
 
 	msg = (iridium_mt_msg*)malloc(total_len);
@@ -219,11 +174,11 @@ int main(int argc, char const *argv[])
 	int unix_server_fd;
 	int temp_client_fd;
 	int rv;
-	int max_fd;
+	int test_fd;
     fd_set readfds;
     fd_set testfds;
 
-	if ((rv = init_msg_send()) < 0) {
+	if ((rv = init()) < 0) {
 		perror("failed to init send message");
 		exit(EXIT_FAILURE);
 	}
@@ -250,8 +205,7 @@ int main(int argc, char const *argv[])
 
     FD_ZERO(&readfds);
     FD_SET(tcp_server_fd, &readfds);
-    FD_SET(unix_server_fd, &readfds);
-    max_fd = tcp_server_fd > unix_server_fd ? tcp_server_fd : unix_server_fd;    
+    FD_SET(unix_server_fd, &readfds);   
 
     while (1) {
 
@@ -265,26 +219,36 @@ int main(int argc, char const *argv[])
             break;
         default:
 
-            if (FD_ISSET(tcp_server_fd, &testfds)) {
-            	temp_client_fd = accept_tcp_client(tcp_server_fd);
-            	FD_SET(temp_client_fd, &readfds);
+        	for (test_fd = 0; test_fd < FD_SETSIZE; test_fd++) {
+        		if (FD_ISSET(test_fd, &testfds)) {
+        			if (test_fd == tcp_server_fd) {
+            			temp_client_fd = accept_tcp_client(tcp_server_fd);
+            			printf("a client connected\n");
+            			FD_SET(temp_client_fd, &readfds);
             	
-            }
+            		}
+            		else if (test_fd == unix_server_fd) {
+            			rv = forward_server_command(unix_server_fd, tcp_client_fd);
+            		} 
 
-            else if (FD_ISSET(unix_server_fd, &testfds)) {
-            	rv = forward_server_command(unix_server_fd, tcp_client_fd);
-            } 
+            		else {
+            			rv = receive_iridium_msgs(test_fd);
+            			if (rv <= 0) {
+            				printf("a client disconnect\n");
+            				FD_CLR(test_fd, &readfds);
+            				close(test_fd);
+            			}
+            		}
+        		}
+	
+        	}
 
-            else {
-            	rv = receive_iridium_msgs(temp_client_fd);
-            	if (rv == 0) {
-            		FD_CLR(temp_client_fd, &readfds);
-            	}
-            }
         }
     }
 	
 	close(tcp_server_fd);
-	free_msg_send();
+	close(unix_server_fd);
+	close(tcp_client_fd);
+
 	exit(EXIT_SUCCESS);
 }
