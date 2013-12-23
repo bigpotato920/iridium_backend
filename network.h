@@ -6,7 +6,6 @@
 #define IRIDIUM_TCP_SERVER_PORT 10800
 #define TCP_SERVER_IP "127.0.0.1"
 #define TCP_SERVER_PORT 8888
-#define UDP_SERVER_PORT 6666
 
 #define QLEN 1
 
@@ -15,6 +14,6 @@ int unix_server_accept(int server_fd);
 int create_tcp_server(const char* ip, int port);
 int accept_tcp_client(int server_fd);
 int create_tcp_client();
-int connect_to_tcp_server(int client_fd, const char*ip, int port);
-int send_to_udp_server(unsigned long ip, const char* msg);
+int connect_to_tcp_server(int client_fd, const char* ip, int port);
+int send_to_udp_server(unsigned long ip, int port, const char* msg);
 #endif

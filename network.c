@@ -92,7 +92,7 @@ int create_tcp_server(const char* ip, int port)
 		return -1;
 	}
 
-	if (listen(server_fd, 1) < 0) {
+	if (listen(server_fd, 5) < 0) {
 		perror("socket listen");
 		return -1;
 	}
@@ -158,7 +158,7 @@ int connect_to_tcp_server(int client_fd, const char*ip, int port)
  * @param  msg message to be send
  * @return     0 on success
  */
-int send_to_udp_server(unsigned long ip, const char* msg) 
+int send_to_udp_server(unsigned long ip, int port, const char* msg) 
 {
 
 	int sock_fd;
@@ -171,7 +171,7 @@ int send_to_udp_server(unsigned long ip, const char* msg)
 
 	bzero(&server_addr, sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
-	server_addr.sin_port = htons(UDP_SERVER_PORT);
+	server_addr.sin_port = htons(port);
 	server_addr.sin_addr.s_addr = ip;
 	sock_len = sizeof(struct sockaddr_in);
 
