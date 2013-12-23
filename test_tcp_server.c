@@ -5,56 +5,76 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <errno.h>
 
 #define SERVER_PORT 8888
-#define SERVER_IP "127.0.0.1"
-#define SBD_MO_MAX 25
+//#define SERVER_IP "10.103.240.52"
+#define SERVER_IP "222.128.13.159"
+#define SBD_MO_MAX 30
+
+
+typedef struct 
+{
+    char header[51];
+    char payload[];
+} sbd_mo_msg;
+
 
 typedef struct
 {
-   int sn;
-   unsigned long ip;
-   int index;
-   int count;
-   char msg[];
+    int sn;
+    long ip;
+    int port;
+    int index;
+    int count;
+    char msg[];
 } iridium_msg;
 
-#define HEADER_LEN sizeof(iridium_msg)
+
 
 int main(int argc, char**argv)
 {
-   int server_fd;
-   struct sockaddr_in server_addr;
+    int server_fd;
+    struct sockaddr_in server_addr;
+    int result;
+    
+    int index = atoi(argv[1]);
+    const char* msgs[] = {"hello worl", "d I come f", "rom China"};
 
-   iridium_msg* m_msg = (iridium_msg*)malloc(sizeof(iridium_msg) + SBD_MO_MAX - HEADER_LEN);
-   const char* msgs[] = {"hello wor", "ld I come", " from Chi", "na"};
+    server_fd = socket(AF_INET,SOCK_STREAM,0);
 
-   if (argc < 2) {
-      printf("Usage:%s index\n", argv[0]);
-      exit(EXIT_FAILURE);
-   }
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr=inet_addr(SERVER_IP);
+    server_addr.sin_port=htons(SERVER_PORT);
 
-   int sn = atoi(argv[1]);
-   int index = atoi(argv[2]);
+    result = connect(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr));
+    if (result < 0) {
+        printf("failed to connect to remote server, errno = %d\n", errno);
+        return 1;
+    }
 
-   server_fd = socket(AF_INET,SOCK_STREAM,0);
+    iridium_msg *m_msg = (iridium_msg*)malloc(30);
 
-   memset(&server_addr, 0, sizeof(server_addr));
-   server_addr.sin_family = AF_INET;
-   server_addr.sin_addr.s_addr=inet_addr(SERVER_IP);
-   server_addr.sin_port=htons(SERVER_PORT);
+    m_msg->sn = 0;
+    m_msg->ip = 1688381632;
+    m_msg->port = 8000;
+    m_msg->index = index;
+    m_msg->count = 3;
+    memcpy(m_msg->msg, msgs[index], 10);
 
-   connect(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr));
+    sbd_mo_msg *sbd_msg = (sbd_mo_msg*)malloc(81);
 
-   m_msg->sn = sn;
-   m_msg->ip = 2676598976;
-   m_msg->index = index;
-   m_msg->count = 4;
-   
-   memcpy(m_msg->msg, msgs[index], SBD_MO_MAX - HEADER_LEN);
-   write(server_fd, m_msg, sizeof(iridium_msg) + SBD_MO_MAX - HEADER_LEN);
-   close(server_fd);
+    memset(sbd_msg->header, 0, 51);
+    memcpy(sbd_msg->payload, m_msg, 30);
 
-   free(m_msg);
-   exit(EXIT_SUCCESS);
+    write(server_fd, sbd_msg, 81);
+
+    free(m_msg);
+    free(sbd_msg);
+
+    close(server_fd);
+
+    exit(EXIT_SUCCESS);
 }
