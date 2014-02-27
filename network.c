@@ -164,6 +164,8 @@ int send_to_udp_server(unsigned long ip, int port, const char* msg)
 	int sock_fd;
 	struct sockaddr_in server_addr;
 	socklen_t sock_len;
+	int nwrite;
+
 	if ((sock_fd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
 		perror("socket error");
 		return -1;
@@ -172,9 +174,12 @@ int send_to_udp_server(unsigned long ip, int port, const char* msg)
 	bzero(&server_addr, sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_port = htons(port);
-	server_addr.sin_addr.s_addr = ip;
+	server_addr.sin_addr.s_addr = htonl(ip);
 	sock_len = sizeof(struct sockaddr_in);
 
-	sendto(sock_fd, msg, strlen(msg), 0, (struct sockaddr*)&server_addr, sock_len);
+	nwrite = sendto(sock_fd, msg, strlen(msg), 0, (struct sockaddr*)&server_addr, sock_len);
+
+	if (nwrite < 0)
+		return -1;
 	return 0;
 }

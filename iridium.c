@@ -6,10 +6,18 @@
 
 #include "network.h"
 
-#define SLICE_LEN 30
+#define SLICE_LEN 100  
 #define SBD_MO_HEADER_LEN 51
 #define MAX_PACKET_SIZE 1960
 #define MAX_IRIDIUM_NUM 3
+
+#define CONFIG_FILENAME "backend_config"
+
+char unix_server_path[256];
+char iridium_tcp_server_ip[256];
+int iridium_tcp_server_port;
+char local_tcp_server_ip[256];
+int local_tcp_server_port;
 
 typedef struct
 {
@@ -75,6 +83,7 @@ int resemble_iridium_msgs(slice* slice, int payload_len);
 int forward_iridium_msg (int sn);
 int forward_server_command(int unix_server_fd, int tcp_client_fd);
 int sendto_iridium(int tcp_client_fd, const char* imei, const char* command);
+int read_config(const char *filename);
 mo_msg mo_msgs[MAX_IRIDIUM_NUM];
 
 int init()
@@ -85,9 +94,43 @@ int init()
 		mo_msgs[i].payload_len = 0;
 	}
 
+	read_config(CONFIG_FILENAME);
 	return 0;
 }
 
+/**
+ * Read configuration from specific file
+ * 
+ * @param filename name of the configuration file
+ * @return 0 on success or -1 on failure
+ */
+int read_config(const char *filename)
+{
+	FILE *file;
+	int rv;
+	char key[100] = {0};
+	char value[100] = {0};
+
+	file = fopen(filename, "r");
+
+	while ((rv = fscanf(file, "%s %s", key, value)) > 0)
+	{
+	    if (!(strcmp(key, "UNIX_SERVER_PATH"))) {
+	        strcpy(unix_server_path, value);
+	    } else if (!(strcmp(key, "IRIDIUM_TCP_SERVER_IP"))) {
+	        strcpy(iridium_tcp_server_ip, value);
+	    } else if (!(strcmp(key, "IRIDIUM_TCP_SERVER_PORT"))) {
+	        iridium_tcp_server_port = atoi(value);
+	    } else if (!(strcmp(key, "LOCAL_TCP_SERVER_IP"))) {
+	        strcpy(local_tcp_server_ip, value);
+	    } else if (!(strcmp(key, "LOCAL_TCP_SERVER_PORT"))) {
+	        local_tcp_server_port = atoi(value);
+	    } 
+	}
+	fclose(file);
+
+	return 0;
+}
 /**
  * Retrieve a single message from the iridium gss
  * @param  client_fd socket descriptor of the connected clinet
@@ -198,7 +241,7 @@ int forward_server_command(int unix_server_fd, int tcp_client_fd)
 	unix_client_fd = unix_server_accept(unix_server_fd);
 	nread = read(unix_client_fd, &m_command, BUFSIZ);
 
-	rv = connect_to_tcp_server(tcp_client_fd, IRIDIUM_TCP_SERVER_IP, IRIDIUM_TCP_SERVER_PORT);
+	rv = connect_to_tcp_server(tcp_client_fd, iridium_tcp_server_ip, iridium_tcp_server_port);
 	if (rv < 0) {
 		perror("Failed to connect to the iridium gss server");
 		return -1;
@@ -260,7 +303,7 @@ int main(int argc, char const *argv[])
 	}
 
 
-	tcp_server_fd = create_tcp_server(TCP_SERVER_IP, TCP_SERVER_PORT);
+	tcp_server_fd = create_tcp_server(local_tcp_server_ip, local_tcp_server_port);
 	if (tcp_server_fd < 0) {
 		perror("Failed to create tcp server");
 		exit(EXIT_FAILURE);
@@ -273,7 +316,7 @@ int main(int argc, char const *argv[])
 	}
 
 
-	unix_server_fd = create_unix_server(UNIX_SERVER_PATH);
+	unix_server_fd = create_unix_server(unix_server_path);
 	if (unix_server_fd < 0) {
 		perror("Failed to create unix server");
 		exit(EXIT_FAILURE);
