@@ -12,6 +12,7 @@
 #define MAX_IRIDIUM_NUM 3
 
 #define CONFIG_FILENAME "backend_config"
+const char *key = "bupt0632";
 
 char unix_server_path[256];
 char iridium_tcp_server_ip[256];
@@ -21,11 +22,12 @@ int local_tcp_server_port;
 
 typedef struct
 {
+	char magic_code[8];
 	int sn; // sequential number of the iridium terminal
 	unsigned long ip; // destination ip address
     int port; // port num
 	int index; // index of the specific slice
-	int count; // totoal count of the slices
+	int has_more; // totoal count of the slices
 
 } slice_header;
 
@@ -41,7 +43,6 @@ typedef struct
 typedef struct 
 {
 	slice_header header;
-	int current_count;
 	int payload_len;
 	char payload[MAX_PACKET_SIZE];
 } mo_msg;
@@ -90,7 +91,6 @@ int init()
 {
 	int i;
 	for (i = 0; i < MAX_IRIDIUM_NUM; i++) {
-		mo_msgs[i].current_count = 0;
 		mo_msgs[i].payload_len = 0;
 	}
 
@@ -180,20 +180,26 @@ int receive_iridium_msgs(int client_fd)
  */
 int resemble_iridium_msgs(slice *slice, int payload_len)
 {
-	printf("index = %d, payload_len = %d, msg = %s\n", slice->header.index, 
-		payload_len, slice->payload);
+	int i;
+	char *magic_code = slice->header.magic_code;
+	
+	if (strcmp(magic_code, key) != 0) {
+		printf("invalid message\n");
+		return 0;
+	}
+
 	int sn = slice->header.sn;
 	int index = slice->header.index;
 	mo_msgs[sn].header = slice->header;
-	int i;
 	mo_msgs[sn].payload_len += payload_len;
-	mo_msgs[sn].current_count += 1;
 	memcpy(mo_msgs[sn].payload + index*(SLICE_PAYLOAD_LEN), slice->payload,
 		payload_len);
 
+	printf("index = %d, payload_len = %d, msg = %s\n", slice->header.index, 
+		payload_len, slice->payload);
 	//resemble complete
-	if (mo_msgs[sn].current_count == slice->header.count) {
-		mo_msgs[sn].current_count = 0;
+	if (slice->header.has_more == 0) {
+
 		mo_msgs[sn].payload[mo_msgs[sn].payload_len] = '\0';
 		printf("total payload len = %d\n", mo_msgs[sn].payload_len);
 		
@@ -341,7 +347,10 @@ int main(int argc, char const *argv[])
         	for (test_fd = 0; test_fd < FD_SETSIZE; test_fd++) {
         		if (FD_ISSET(test_fd, &testfds)) {
         			if (test_fd == tcp_server_fd) {
-            			temp_client_fd = accept_tcp_client(tcp_server_fd);
+            			temp_client_fd = accept_tcp_client(tcp_server_fd, "12.13.150.12");
+            			if (temp_client_fd < 0) {
+            				continue;
+            			}
             			printf("a client connected\n");
             			FD_SET(temp_client_fd, &readfds);
             	
