@@ -12,7 +12,7 @@
 #define MAX_IRIDIUM_NUM 3
 
 #define CONFIG_FILENAME "backend_config"
-const char *key = "bupt0632";
+const char *key = "bupt632";
 
 char unix_server_path[256];
 char iridium_tcp_server_ip[256];
@@ -176,20 +176,20 @@ int receive_iridium_msgs(int client_fd)
  * Resemble the slice messages into a complete message
  * @param  index the index of the slice message
  * @param  msg   slice message
- * @return       [description]
+ * @return       1 on messages resemble complete, 0 on not complete or invalid message
  */
 int resemble_iridium_msgs(slice *slice, int payload_len)
 {
 	int i;
 	char *magic_code = slice->header.magic_code;
-	
+
 	if (strcmp(magic_code, key) != 0) {
 		printf("invalid message\n");
 		return 0;
 	}
 
 	int sn = slice->header.sn;
-	int index = slice->header.index;
+	int index = slice->header.index;   
 	mo_msgs[sn].header = slice->header;
 	mo_msgs[sn].payload_len += payload_len;
 	memcpy(mo_msgs[sn].payload + index*(SLICE_PAYLOAD_LEN), slice->payload,
@@ -211,7 +211,7 @@ int resemble_iridium_msgs(slice *slice, int payload_len)
 
 		return 1;
 	}
-
+  
 	return 0;
 }
 
@@ -347,7 +347,7 @@ int main(int argc, char const *argv[])
         	for (test_fd = 0; test_fd < FD_SETSIZE; test_fd++) {
         		if (FD_ISSET(test_fd, &testfds)) {
         			if (test_fd == tcp_server_fd) {
-            			temp_client_fd = accept_tcp_client(tcp_server_fd, "12.13.150.12");
+            			temp_client_fd = accept_tcp_client(tcp_server_fd);
             			if (temp_client_fd < 0) {
             				continue;
             			}
